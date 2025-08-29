@@ -1,0 +1,19 @@
+topic: "Ayurvedic LifeStyle in Modern World"
+audience: "General Public"
+language: "en-US"
+region: ""
+style_preset: "lifestyle-playbook"
+chapters: 3
+subsections_per_chapter: [4, 6]
+word_target: 10000
+include_citations: false
+
+# IMPORTANT: these must exactly match your installed models
+writer_model: "llama3.1:latest"
+refiner_model: "qwen2:7b-instruct"
+
+export:
+  pdf: true
+  epub: true
+  docx: true
+  pdf_engine: "tectonic"

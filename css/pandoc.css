@@ -1,0 +1,7 @@
+body { font-family: -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif; line-height: 1.6; }
+h1, h2, h3 { line-height: 1.25; }
+code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+table { border-collapse: collapse; width: 100%; }
+th, td { border: 1px solid #ddd; padding: 6px; }
+th { background: #f3f3f3; }
+blockquote { color: #555; border-left: 4px solid #ddd; padding-left: 10px; }

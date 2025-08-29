@@ -1,0 +1,7 @@
+chapter_scaffolds:
+  intro: ["Why it matters", "Who this is for", "Outcomes"]
+  core: ["Framework", "Examples", "Pitfalls", "Checklist"]
+  close: ["KPIs", "Tools", "Next steps"]
+style_rules:
+  - "favor clarity over jargon"
+  - "add KPI table when helpful"

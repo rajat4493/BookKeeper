@@ -1,0 +1,7 @@
+chapter_scaffolds:
+  intro: ["What you’ll build", "Prereqs", "Demo"]
+  core: ["Steps", "Common errors", "Debug tips"]
+  close: ["Extensions", "Further reading"]
+style_rules:
+  - "use step-by-step lists"
+  - "short code blocks allowed"
