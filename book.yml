@@ -1,12 +1,12 @@
-topic: "<<< YOUR TOPIC HERE >>>"
-audience: "<<< YOUR AUDIENCE >>>"
+topic: "Ayurveda and the Modern World"
+audience: "fitness and health"
 language: "en-US"
 region: ""
-style_preset: "narrative"     # or business-playbook | tutorial | academic-lite | checklist
+style_preset: "narrative"     # or business-playbook | tutorial | academic-lite | checklist | narrative
 tone: "warm, conversational, mentor-like; direct address; varied sentence length"
-chapters: 12
+chapters: 5
 subsections_per_chapter: [4, 6]
-word_target: 10000
+word_target: 7000
 include_citations: false
 
 # Use models you actually have installed
