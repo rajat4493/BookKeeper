@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from .ollama_client import generate
 from .util import extract_json
 
@@ -14,6 +15,7 @@ Return STRICT JSON with keys: title, subtitle, audience, chapters.
 Constraints:
 - Style preset: {style}
 - Tone: {tone}
+- Persona voice: {persona}
 - Language: {lang}
 - Region focus: {region}
 - Avoid filler; ensure progression from fundamentals to advanced.
@@ -21,18 +23,19 @@ Return ONLY JSON.
 """
 
 def build_outline(cfg: dict) -> dict:
-  prompt = TPL.format(
-                topic=cfg["topic"],
-                audience=cfg["audience"],
-                chapters=cfg["chapters"],
-                sub_lo=cfg["subsections_per_chapter"][0],
-                sub_hi=cfg["subsections_per_chapter"][1],
-                style=cfg["style_preset"],
-                tone=cfg.get("tone", "practical, concise, human"),
-                lang=cfg["language"],
-                region=cfg.get("region") or "generic/global",
-            )
-  raw = generate(cfg["writer_model"], prompt, options={"temperature": 0.7})
-  data = extract_json(raw)
-  data["chapters"] = data.get("chapters", [])[: cfg["chapters"]]
-  return data
+    prompt = TPL.format(
+        topic=cfg["topic"],
+        audience=cfg["audience"],
+        chapters=cfg["chapters"],
+        sub_lo=cfg["subsections_per_chapter"][0],
+        sub_hi=cfg["subsections_per_chapter"][1],
+        style=cfg["style_preset"],
+        tone=cfg.get("tone", "practical, concise, human"),
+        persona=cfg.get("persona", "A knowledgeable but friendly coach."),
+        lang=cfg["language"],
+        region=cfg.get("region") or "generic/global",
+    )
+    raw = generate(cfg["writer_model"], prompt, options={"temperature": 0.7})
+    data = extract_json(raw)
+    data["chapters"] = data.get("chapters", [])[: cfg["chapters"]]
+    return data

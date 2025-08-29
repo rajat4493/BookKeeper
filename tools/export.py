@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import os, shutil, subprocess
 from pathlib import Path
 
@@ -9,7 +10,6 @@ def run(cmd: list[str]) -> None:
     subprocess.run(cmd, check=True)
 
 def _find_chrome() -> str | None:
-    # Try common macOS + linux names
     candidates = [
         "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
         shutil.which("google-chrome"),
@@ -22,7 +22,6 @@ def export_all(cfg: dict, md_final: Path, cover: Path, outdir: Path) -> None:
     css = Path("css/pandoc.css")
     title = cfg["topic"]
 
-    # Always try to create EPUB/DOCX when pandoc is present
     if has("pandoc"):
         if cfg["export"].get("epub", True):
             run([
@@ -34,14 +33,12 @@ def export_all(cfg: dict, md_final: Path, cover: Path, outdir: Path) -> None:
         if cfg["export"].get("docx", True):
             run(["pandoc", str(md_final), "-o", str(outdir/"book.docx"), "--toc"])
 
-    # PDF
     if not cfg["export"].get("pdf", True):
         return
 
     engine = cfg["export"].get("pdf_engine", "tectonic")
 
     if engine in ("tectonic", "xelatex", "lualatex", "pdflatex"):
-        # LaTeX route (needs pandoc + chosen LaTeX engine)
         if not has("pandoc"):
             print("Pandoc not found → skipping PDF.")
             return
@@ -52,13 +49,12 @@ def export_all(cfg: dict, md_final: Path, cover: Path, outdir: Path) -> None:
         return
 
     if engine == "chrome":
-        # HTML → Chrome headless PDF
         if not has("pandoc"):
             print("Pandoc not found → cannot produce HTML for chrome. Skipping PDF.")
             return
         html_path = outdir / "book.html"
-        run(["pandoc", str(md_final), "-o", str(html_path), "--toc", "--css", str(css),
-             "--metadata", f"title={title}"])
+        run(["pandoc", str(md_final), "-o", str(html_path),
+             "--toc", "--css", str(css), "--metadata", f"title={title}"])
         chrome = _find_chrome()
         if not chrome:
             print("Chrome/Chromium not found → PDF skipped (HTML available).")
@@ -67,5 +63,4 @@ def export_all(cfg: dict, md_final: Path, cover: Path, outdir: Path) -> None:
              f"--print-to-pdf={outdir/'book.pdf'}", str(html_path)])
         return
 
-    # Fallback: try HTML only
     print(f"Unknown pdf_engine '{engine}'. Skipping PDF (EPUB/DOCX still generated).")

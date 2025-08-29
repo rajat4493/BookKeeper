@@ -1,19 +1,29 @@
-topic: "Ayurvedic LifeStyle in Modern World"
-audience: "General Public"
+topic: "<<< YOUR TOPIC HERE >>>"
+audience: "<<< YOUR AUDIENCE >>>"
 language: "en-US"
 region: ""
-style_preset: "lifestyle-playbook"
-chapters: 3
+style_preset: "narrative"     # or business-playbook | tutorial | academic-lite | checklist
+tone: "warm, conversational, mentor-like; direct address; varied sentence length"
+chapters: 12
 subsections_per_chapter: [4, 6]
 word_target: 10000
 include_citations: false
 
-# IMPORTANT: these must exactly match your installed models
+# Use models you actually have installed
 writer_model: "llama3.1:latest"
 refiner_model: "qwen2:7b-instruct"
+
+persona: "A practical mentor speaking to a busy reader; empathetic, encouraging, and specific."
+humanize:
+  enabled: true
+  rhetorical_question_rate: 0.15
+  anecdote_rate: 0.20
+  contractions: true
+  read_level: "Grade 8-10"
+  add_checklists: true
 
 export:
   pdf: true
   epub: true
   docx: true
-  pdf_engine: "tectonic"
+  pdf_engine: "tectonic"  # tectonic | xelatex | chrome
