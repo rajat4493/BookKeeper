@@ -6,11 +6,11 @@ import yaml
 
 DEFAULTS: dict = {
     "language": "en-US",
-    "style_preset": "business-playbook",
+    "style_preset": "financial-playbook",
     "tone": "practical, concise, human",
-    "chapters": 7,
+    "chapters": 12,
     "subsections_per_chapter": [4, 6],
-    "word_target": 9000,
+    "word_target": 12000,
     "include_citations": False,
     "writer_model": "llama3.1:8b-instruct",
     "refiner_model": "",

@@ -1,262 +1,225 @@
 from __future__ import annotations
 
-import colorsys
-import hashlib
-import math
+import colorsys, hashlib
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
-
-# ---------- helpers ----------
-def _pick_font(candidates: list[str], size: int):
-    for p in candidates:
+# -------------------- font helpers --------------------
+def _pick_font(paths: list[str], size: int):
+    for p in paths:
         try:
             return ImageFont.truetype(p, size)
         except Exception:
             continue
     return ImageFont.load_default()
 
-def _font(size: int):
-    mac_sans = [
-        "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-        "/System/Library/Fonts/Supplemental/Arial.ttf",
-        "/System/Library/Fonts/Helvetica.ttc",
-        "/Library/Fonts/Arial.ttf",
-    ]
-    win_sans = [
-        "C:/Windows/Fonts/arial.ttf",
-        "C:/Windows/Fonts/segoeui.ttf",
-    ]
-    linux_sans = [
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-    ]
-    return _pick_font(mac_sans + win_sans + linux_sans, size)
+def _font_sans(size: int):
+    mac = ["/System/Library/Fonts/Helvetica.ttc",
+           "/System/Library/Fonts/Supplemental/Arial.ttf",
+           "/Library/Fonts/Arial.ttf"]
+    win = ["C:/Windows/Fonts/arial.ttf", "C:/Windows/Fonts/segoeui.ttf"]
+    lin = ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+           "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"]
+    return _pick_font(mac + win + lin, size)
 
+def _font_script(size: int):
+    # broad set to increase chances on mac/win/linux
+    mac = ["/System/Library/Fonts/Supplemental/SnellRoundhand.ttc",
+           "/System/Library/Fonts/Supplemental/Zapfino.ttf",
+           "/System/Library/Fonts/Supplemental/Brush Script.ttf",
+           "/Library/Fonts/Apple Chancery.ttf"]
+    win = ["C:/Windows/Fonts/brushs.ttf", "C:/Windows/Fonts/segoesc.ttf"]
+    lin = ["/usr/share/fonts/truetype/dejavu/DejaVuSerif-Italic.ttf"]  # fallback
+    return _pick_font(mac + win + lin, size)
+
+# -------------------- color + layout helpers --------------------
 def _hsl(h: float, s: float, l: float) -> tuple[int, int, int]:
-    r, g, b = colorsys.hls_to_rgb(h / 360.0, l, s)
-    return (int(r * 255), int(g * 255), int(b * 255))
-
-def _lerp(a: tuple[int, int, int], b: tuple[int, int, int], t: float):
-    return (int(a[0] + (b[0] - a[0]) * t),
-            int(a[1] + (b[1] - a[1]) * t),
-            int(a[2] + (b[2] - a[2]) * t))
+    r, g, b = colorsys.hls_to_rgb(h/360.0, l, s)
+    return (int(r*255), int(g*255), int(b*255))
 
 def _hash_hue(text: str) -> float:
     h = hashlib.sha1(text.encode("utf-8")).hexdigest()
     return (int(h[:2], 16) / 255.0) * 360.0
 
-def _wrap_text(draw: ImageDraw.ImageDraw, text: str, font, max_w: int) -> str:
-    if not text:
-        return ""
-    words = text.split()
-    lines, cur = [], []
+def _build_gradient(size: tuple[int,int], top: tuple[int,int,int], bottom: tuple[int,int,int]) -> Image.Image:
+    W, H = size
+    im = Image.new("RGB", (W, H), bottom)
+    d = ImageDraw.Draw(im)
+    for y in range(H):
+        t = y / max(1, H-1)
+        col = (int(top[0]*(1-t) + bottom[0]*t),
+               int(top[1]*(1-t) + bottom[1]*t),
+               int(top[2]*(1-t) + bottom[2]*t))
+        d.line([(0,y),(W,y)], fill=col)
+    return im
+
+def _vignette(im: Image.Image, strength: float=0.18) -> Image.Image:
+    if strength <= 0: 
+        return im
+    W,H = im.size
+    mask = Image.new("L", (W,H), 255)
+    d = ImageDraw.Draw(mask)
+    cw, ch = int(W*0.78), int(H*0.78)
+    x0, y0 = (W-cw)//2, (H-ch)//2
+    d.ellipse([x0,y0,x0+cw,y0+ch], fill=0)
+    mask = mask.filter(ImageFilter.GaussianBlur(220)).point(lambda p: int(p*strength))
+    overlay = Image.new("RGBA", (W,H), (0,0,0,255)); overlay.putalpha(mask)
+    return Image.alpha_composite(im.convert("RGBA"), overlay)
+
+def _wrap_center(draw: ImageDraw.ImageDraw, text: str, font, max_w: int) -> str:
+    words, lines, row = text.split(), [], []
     for w in words:
-        test = (" ".join(cur + [w])) if cur else w
-        bbox = draw.textbbox((0, 0), test, font=font)
-        if bbox[2] - bbox[0] <= max_w:
-            cur.append(w)
-        else:
-            if cur:
-                lines.append(" ".join(cur))
-            cur = [w]
-    if cur:
-        lines.append(" ".join(cur))
+        t = (" ".join(row+[w])) if row else w
+        wbox = draw.textbbox((0,0), t, font=font)
+        if wbox[2]-wbox[0] <= max_w: 
+            row.append(w)
+        else: 
+            if row: lines.append(" ".join(row))
+            row=[w]
+    if row: lines.append(" ".join(row))
     return "\n".join(lines)
 
-def _text_size(draw: ImageDraw.ImageDraw, text: str, font) -> tuple[int, int]:
-    if not text:
-        return (0, 0)
-    bbox = draw.multiline_textbbox((0, 0), text, font=font, spacing=6, align="center")
-    return (bbox[2] - bbox[0], bbox[3] - bbox[1])
-
-def _auto_fit(draw: ImageDraw.ImageDraw, text: str, max_w: int, max_h: int, start: int, min_size: int = 42):
+def _auto_fit(draw: ImageDraw.ImageDraw, text: str, max_w: int, max_h: int, font_fn, start: int, min_size: int=44):
     size = start
     while size >= min_size:
-        f = _font(size)
-        wrapped = _wrap_text(draw, text, f, max_w)
-        w, h = _text_size(draw, wrapped, f)
-        if w <= max_w and h <= max_h:
+        f = font_fn(size)
+        wrapped = _wrap_center(draw, text, f, max_w)
+        bbox = draw.multiline_textbbox((0,0), wrapped, font=f, spacing=6, align="center")
+        w,h = bbox[2]-bbox[0], bbox[3]-bbox[1]
+        if w<=max_w and h<=max_h: 
             return f, wrapped
         size -= 4
-    f = _font(min_size)
-    return f, _wrap_text(draw, text, f, max_w)
+    f = font_fn(min_size)
+    return f, _wrap_center(draw, text, f, max_w)
 
-def _vignette(base: Image.Image, strength: float = 0.45):
-    W, H = base.size
-    mask = Image.new("L", (W, H), 0)
-    grad = Image.radial_gradient("L").resize((W, H))
-    grad = Image.eval(grad, lambda p: 255 - p)          # bright center
-    grad = Image.eval(grad, lambda p: int(p * strength))
-    dark = Image.new("RGBA", (W, H), (0, 0, 0, 255))
-    return Image.composite(base.convert("RGBA"), dark, grad).convert("RGBA")
-
-
-# ---------- motifs (minimal, tone-on-tone) ----------
-def _leaf_layer(size: tuple[int, int], color: tuple[int, int, int], alpha: int = 42) -> Image.Image:
-    """Draw 3 minimalist leaves in bottom-right corner."""
-    W, H = size
-    layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+# -------------------- mandala motif --------------------
+def _mandala_layer(size: tuple[int,int], color: tuple[int,int,int], alpha: int=40, scale: float=0.9) -> Image.Image:
+    """Tone-on-tone mandala behind the title (minimal)."""
+    W,H = size
+    R = int(min(W,H)*0.38*scale)
+    cx, cy = W//2, int(H*0.33)
+    layer = Image.new("RGBA", (W,H), (0,0,0,0))
     d = ImageDraw.Draw(layer)
-    def leaf(cx, cy, w, h, angle_deg):
-        # draw ellipse on temp then rotate
-        temp = Image.new("RGBA", (int(w*1.4), int(h*1.4)), (0, 0, 0, 0))
-        td = ImageDraw.Draw(temp)
-        bbox = [int(0.2*w), int(0.2*h), int(1.2*w), int(1.2*h)]
-        td.ellipse(bbox, fill=(color[0], color[1], color[2], alpha))
-        # vein
-        td.line([(w*0.7, h*0.2),(w*0.7, h*1.2)], fill=(255,255,255, int(alpha*0.5)), width=max(1, int(w*0.04)))
-        imr = temp.rotate(angle_deg, resample=Image.BICUBIC, expand=True)
-        layer.alpha_composite(imr, (int(cx - imr.width/2), int(cy - imr.height/2)))
-    # positions near bottom-right
-    leaf(W*0.80, H*0.82, W*0.18, H*0.10, -25)
-    leaf(W*0.88, H*0.86, W*0.16, H*0.09, 10)
-    leaf(W*0.83, H*0.92, W*0.14, H*0.08, -5)
-    return layer
 
-def _currency_rain(size: tuple[int, int], color: tuple[int, int, int], alpha: int = 36) -> Image.Image:
-    """Falling currency glyphs (€, $, zł) subtle, diagonal drift."""
-    W, H = size
-    layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    d = ImageDraw.Draw(layer)
-    font = _font(max(36, int(W * 0.04)))
-    glyphs = ["$", "€", "zł"]
-    cols = 6
-    for c in range(cols):
-        x = int((c + 0.5) * W / cols)
-        for r in range(6):
-            y = int((r * H / 6) + ((c % 2) * 18))
-            g = glyphs[(c + r) % len(glyphs)]
-            d.text((x + r*6, y + r*8), g, font=font, fill=(color[0], color[1], color[2], alpha))
-    # slight blur to keep it minimal
+    # concentric circles
+    for k in range(6):
+        r = int(R*(0.35 + 0.1*k))
+        d.ellipse([cx-r, cy-r, cx+r, cy+r], outline=(color[0],color[1],color[2], alpha-8), width=2)
+
+    # petals
+    petals = 16
+    pet_w, pet_h = int(R*0.22), int(R*0.55)
+    pet = Image.new("RGBA", (pet_w*2, pet_h*2), (0,0,0,0))
+    pd = ImageDraw.Draw(pet)
+    pd.ellipse([int(pet_w*0.2), int(pet_h*0.2), int(pet_w*1.8), int(pet_h*1.8)],
+               outline=(color[0],color[1],color[2], alpha), width=3)
+    for i in range(petals):
+        ang = (360/petals)*i
+        rot = pet.rotate(ang, resample=Image.BICUBIC, center=(pet_w, pet_h))
+        layer.alpha_composite(rot, (cx-pet_w, cy-int(R*0.1)-pet_h))
     return layer.filter(ImageFilter.GaussianBlur(0.6))
 
-def _network_dots(size: tuple[int, int], color: tuple[int, int, int], alpha: int = 34) -> Image.Image:
-    """Minimal AI/data motif: small dots + lines in top-right."""
-    W, H = size
-    layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    d = ImageDraw.Draw(layer)
-    nodes = []
-    # cluster in a quadrant
-    for i in range(10):
-        nx = int(W * 0.68 + (W * 0.24) * (i % 5) / 5)
-        ny = int(H * 0.14 + (H * 0.22) * (i // 5) / 2)
-        nodes.append((nx, ny))
-    for i, (x1, y1) in enumerate(nodes):
-        for j, (x2, y2) in enumerate(nodes):
-            if j > i and (i + j) % 3 == 0:
-                d.line([(x1, y1), (x2, y2)], fill=(color[0], color[1], color[2], alpha), width=1)
-    for (x, y) in nodes:
-        d.ellipse([x-3, y-3, x+3, y+3], fill=(color[0], color[1], color[2], min(alpha+10, 60)))
-    return layer
-
 def _choose_theme(cfg: dict, outline: dict) -> str:
-    # explicit override
     theme = (cfg.get("cover", {}) or {}).get("theme", "auto")
     topic = ((outline.get("title") or cfg.get("topic") or "") + " " + (cfg.get("audience") or "")).lower()
-    if theme and theme != "auto":
+    if theme and theme != "auto": 
         return theme
-    # keyword heuristics
-    keys = {
-        "ayurveda": ["ayurveda", "yoga", "herb", "wellness", "holistic", "dosha"],
-        "tariff": ["tariff", "duty", "customs", "import", "export", "trade", "pricing"],
-        "ai": ["ai", "ml", "machine learning", "automation", "data", "genai", "llm"],
-    }
+    keys = {"ayurveda":["ayurveda","yoga","wellness","herb","dosha"],
+            "tariff":["tariff","duty","customs","import","export","trade"],
+            "ai":["ai","ml","automation","data","genai","llm"]}
     for k, arr in keys.items():
-        if any(w in topic for w in arr):
+        if any(w in topic for w in arr): 
             return k
-    return "minimal"  # default motif-free
+    return "minimal"
 
-def _motif_layer(theme: str, size: tuple[int, int], color: tuple[int, int, int], strength: int):
-    if theme == "ayurveda":
-        return _leaf_layer(size, color, alpha=strength)
-    if theme == "tariff":
-        return _currency_rain(size, color, alpha=strength)
-    if theme == "ai":
-        return _network_dots(size, color, alpha=strength)
-    return Image.new("RGBA", size, (0, 0, 0, 0))
+# -------------------- title condense (optional) --------------------
+def _condense_title(title: str, cfg: dict) -> str:
+    cover_cfg = (cfg.get("cover", {}) or {})
+    if not cover_cfg.get("condense_title", False): 
+        return title
+    max_words = int(cover_cfg.get("max_title_words", 6))
+    # Try LLM condense if available
+    try:
+        from .ollama_client import generate
+        res = generate(cfg.get("refiner_model", cfg.get("writer_model")),
+                       f"Condense the title to maximum {max_words} words. Keep meaning. Return only the title: {title}",
+                       options={"temperature":0.3}).strip().strip('"')
+        if 1 <= len(res.split()) <= max_words:
+            return res
+    except Exception:
+        pass
+    # Heuristic fallback
+    words = [w for w in title.split() if len(w) > 2]
+    return " ".join(words[:max_words]) or title
 
-
-# ---------- main ----------
+# -------------------- main --------------------
 def make_cover(cfg: dict, outline: dict, out_path: Path) -> None:
-    # Canvas
-    W, H = cfg.get("cover_size", [1600, 2560])
-    if isinstance(W, list):  # if config accidentally provides list
+    size = cfg.get("cover_size", [1600, 2560])
+    if isinstance(size, (list, tuple)) and len(size) == 2:
+        W, H = size
+    else:
         W, H = 1600, 2560
 
+    # palette
     title = (outline.get("title") or cfg.get("topic") or "Untitled").strip()
     subtitle = (outline.get("subtitle") or cfg.get("subtitle") or "").strip()
-    author = (cfg.get("author") or "").strip()
+    cover_cfg = (cfg.get("cover", {}) or {})
+    show_sub = bool(cover_cfg.get("show_subtitle", False))  # default OFF
+    title = _condense_title(title, cfg)
 
-    # Palette from title hash
     hue = _hash_hue(title)
-    base = _hsl(hue, 0.42, 0.46)
-    grad_to = _hsl((hue + 32) % 360, 0.44, 0.34)
-    accent = _hsl((hue + 302) % 360, 0.55, 0.58)
+    top, bottom = _hsl(hue, 0.52, 0.58), _hsl((hue+28)%360, 0.50, 0.42)
+    accent = _hsl((hue+298)%360, 0.55, 0.60)
 
-    # Smooth vertical gradient
-    grad = Image.new("RGB", (W, H), 0)
-    gd = ImageDraw.Draw(grad)
-    for y in range(H):
-        t = y / max(1, H - 1)
-        gd.line([(0, y), (W, y)], fill=_lerp(base, grad_to, t))
-    im = grad
+    # optional forced palettes
+    if cover_cfg.get("force_palette") == "ayurveda":
+        top, bottom, accent = (128,169,132), (82,122,92), (196,220,198)
+    elif cover_cfg.get("force_palette") == "tariff":
+        top, bottom, accent = (44,110,168), (24,63,108), (158,210,255)
 
-    # Minimal motif layer (tone-on-tone)
+    im = _build_gradient((W,H), top, bottom).convert("RGBA")
+
+    # Mandala motif for Ayurveda
     theme = _choose_theme(cfg, outline)
-    motif_strength = int((cfg.get("cover", {}) or {}).get("motif_strength", 36))  # 0-255
-    motif = _motif_layer(theme, (W, H), accent, strength=motif_strength)
-    im = Image.alpha_composite(im.convert("RGBA"), motif)
+    if theme == "ayurveda":
+        mandala_alpha = int(cover_cfg.get("mandala_strength", 46))
+        mandala_scale = float(cover_cfg.get("mandala_scale", 0.9))
+        im = Image.alpha_composite(im, _mandala_layer((W,H), accent, mandala_alpha, mandala_scale))
 
-    # Subtle vignette for focus
-    im = _vignette(im, strength=0.35)
+    # gentle vignette
+    vign = float(cover_cfg.get("vignette_strength", 0.15))
+    im = _vignette(im, strength=vign)
 
-    # Text layout
+    # typesetting (minimal)
     draw = ImageDraw.Draw(im)
-    margin_x = int(W * 0.12)
-    max_title_w = W - margin_x * 2
-    max_title_h = int(H * 0.30)
-    max_sub_w = W - margin_x * 2
-    max_sub_h = int(H * 0.12)
+    margin_x = int(W * 0.10)
+    max_title_w, max_title_h = (W - margin_x * 2), int(H * 0.24)
+    title_font, wrapped_title = _auto_fit(draw, title, max_title_w, max_title_h, _font_script, start=190, min_size=64)
 
-    title_font, wrapped_title = _auto_fit(draw, title, max_title_w, max_title_h, start=164, min_size=56)
-    sub_font_size = max(38, int(title_font.size * 0.46))
-    sub_font = _font(sub_font_size)
-    wrapped_sub = _wrap_text(draw, subtitle, sub_font, max_sub_w) if subtitle else ""
+    # position ~ upper third
+    tw, th = draw.multiline_textbbox((0,0), wrapped_title, font=title_font, spacing=6, align="center")[2:]
+    tw -= 0; th -= 0
+    tx, ty = (W - tw) // 2, int(H * 0.30) - th // 2
 
-    # Title position (slightly above center)
-    tw, th = _text_size(draw, wrapped_title, title_font)
-    tx = (W - tw) // 2
-    ty = int(H * 0.30) - th // 2
-
-    # Draw text with soft readability halo
-    text_layer = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    td = ImageDraw.Draw(text_layer)
-    # halo
+    # soft **light** halo for readability
     halo = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     hd = ImageDraw.Draw(halo)
-    hd.ellipse([tx - 60, ty - 40, tx + tw + 60, ty + th + 60], fill=(0, 0, 0, 40))
-    halo = halo.filter(ImageFilter.GaussianBlur(16))
-    text_layer = Image.alpha_composite(text_layer, halo)
+    hd.ellipse([tx - 70, ty - 50, tx + tw + 70, ty + th + 70], fill=(255, 255, 255, 80))
+    halo = halo.filter(ImageFilter.GaussianBlur(14))
+    im = Image.alpha_composite(im, halo)
+
     # title
-    td.multiline_text((tx, ty), wrapped_title, font=title_font, fill=(255, 255, 255, 245), align="center", spacing=6)
+    td = ImageDraw.Draw(im)
+    td.multiline_text((tx, ty), wrapped_title, font=title_font, fill=(255,255,255,245), align="center", spacing=6)
 
-    # subtitle
-    if wrapped_sub:
-        sw, sh = _text_size(td, wrapped_sub, sub_font)
-        sx = (W - sw) // 2
-        sy = ty + th + 28
-        td.multiline_text((sx, sy), wrapped_sub, font=sub_font, fill=(238, 240, 248, 235), align="center", spacing=6)
+    # optional short subtitle (sans)
+    if show_sub and subtitle:
+        sub_font = _font_sans(max(34, int(title_font.size * 0.40)))
+        sub_wrapped = _wrap_center(draw, subtitle, sub_font, W - margin_x * 2)
+        sb = td.multiline_textbbox((0,0), sub_wrapped, font=sub_font, spacing=6, align="center")
+        sw, sh = sb[2]-sb[0], sb[3]-sb[1]
+        sx, sy = (W - sw)//2, ty + th + 24
+        td.multiline_text((sx, sy), sub_wrapped, font=sub_font, fill=(238,240,248,235), align="center", spacing=6)
 
-    # author (optional footer)
-    if author:
-        f_small = _font(34)
-        aw = ImageDraw.Draw(text_layer).textlength(author, font=f_small)
-        ax = (W - int(aw)) // 2
-        ay = int(H * 0.88)
-        ImageDraw.Draw(text_layer).text((ax, ay), author, font=f_small, fill=(240, 242, 250, 220))
-
-    # Compose
-    out = Image.alpha_composite(im, text_layer).convert("RGB")
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out.save(out_path, quality=95)
+    im.convert("RGB").save(out_path, quality=95)

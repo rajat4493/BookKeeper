@@ -1,12 +1,12 @@
-topic: "Ayurveda and the Modern World"
-audience: "fitness and health"
+topic: "Passive Income Ways in 2026"
+audience: "wealth and ideas"
 language: "en-US"
 region: ""
-style_preset: "narrative"     # or business-playbook | tutorial | academic-lite | checklist | narrative
+style_preset: "financial-playbook"     # or business-playbook | tutorial | academic-lite | checklist | narrative
 tone: "warm, conversational, mentor-like; direct address; varied sentence length"
-chapters: 5
+chapters: 12
 subsections_per_chapter: [4, 6]
-word_target: 7000
+word_target: 10000
 include_citations: false
 
 # Use models you actually have installed
@@ -21,6 +21,10 @@ humanize:
   contractions: true
   read_level: "Grade 8-10"
   add_checklists: true
+cover:
+  theme: "ayurveda"
+  motif_strength: 60        # was ~36 → a touch stronger
+  vignette_strength: 0.18   # was ~0.30 → lighter edges
 
 export:
   pdf: true

@@ -48,29 +48,57 @@ def _add_checklists(text: str) -> str:
         flags=re.DOTALL
     )
 
+def _split_sections(md: str, max_chars: int = 8000) -> list[str]:
+    """Split by chapters so we can rewrite in chunks (prevents truncation)."""
+    parts, buf = [], ""
+    blocks = md.split("\n## ")
+    if blocks:
+        # keep the header block as-is
+        buf = blocks[0]
+        for rest in blocks[1:]:
+            chunk = "## " + rest
+            if len(buf) + len(chunk) > max_chars and buf:
+                parts.append(buf)
+                buf = chunk
+            else:
+                buf += "\n\n" + chunk
+        if buf:
+            parts.append(buf)
+    else:
+        parts = [md]
+    return parts
+
 def humanize(cfg: dict, in_path: Path, out_path: Path) -> None:
-    t = in_path.read_text(encoding='utf-8')
+    text_all = in_path.read_text(encoding='utf-8')
     hcfg = cfg.get('humanize', {})
     rate_q = float(hcfg.get('rhetorical_question_rate', 0.1))
     add_check = bool(hcfg.get('add_checklists', True))
     use_contr = bool(hcfg.get('contractions', True))
 
-    # LLM light rewrite for warmth/voice
     persona = cfg.get('persona', 'a friendly coach')
     tone = cfg.get('tone', 'conversational, concise')
-    prompt = f"""Rewrite the following markdown to be warmer, more conversational, and mentor-like.
+
+    chunks = _split_sections(text_all, max_chars=8000)
+    rewritten: list[str] = []
+
+    for chunk in chunks:
+        prompt = f"""Rewrite the following markdown to be warmer, more conversational, and mentor-like.
 Use second person where natural, occasional first-person as a mentor.
-Keep headings and markdown intact. Keep facts intact.
+Keep headings and markdown structure intact. Keep facts intact.
+Maintain approximately the SAME length (±10%); DO NOT summarize or remove sections.
 Tone: {tone}
 Persona: {persona}
 Return only the revised markdown.
 ---
-{t}
+{chunk}
 """
-    try:
-        revised = generate(cfg['refiner_model'], prompt, options={'temperature': 0.7})
-    except Exception:
-        revised = t  # fallback
+        try:
+            out = generate(cfg['refiner_model'], prompt, options={'temperature': 0.7, 'num_predict': 4096})
+        except Exception:
+            out = chunk
+        rewritten.append(out)
+
+    revised = "\n\n".join(rewritten)
 
     if use_contr:
         revised = _contractions(revised)
